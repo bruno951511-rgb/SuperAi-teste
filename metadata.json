@@ -1,0 +1,5 @@
+{
+  "name": "Tabula Rasa AI",
+  "description": "Uma IA 'bêbê' que começa sem conhecimento e aprende através de interação e arquivos locais. Utiliza Gemini 2.5 com orçamento de pensamento para raciocínio lógico.",
+  "requestFramePermissions": []
+}
