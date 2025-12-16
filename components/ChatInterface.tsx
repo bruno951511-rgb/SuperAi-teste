@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../types';
 import { sendMessageToGemini } from '../services/geminiService';
+import { memoryService } from '../services/memoryService';
 
 interface ChatInterfaceProps {
   onLearn: () => void;
@@ -11,6 +12,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ data: string; mimeType: string } | null>(null);
+  const [showCommands, setShowCommands] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -21,6 +24,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInput(value);
+    // Show commands if user starts typing a command
+    setShowCommands(value.trim() === '/');
+  };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -39,6 +49,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
   const handleSend = async () => {
     if ((!input.trim() && !selectedImage) || isLoading) return;
 
+    // --- Lógica de Comando /treino ---
+    if (input.startsWith('/treino ')) {
+        const fato = input.replace('/treino ', '').trim();
+        if (fato) {
+            // Grava na memória local
+            memoryService.addMemory(fato); 
+            // Atualiza o app pai (TrainingInterface precisa saber que mudou)
+            onLearn();
+
+            const confirmMsg: ChatMessage = {
+                role: 'model',
+                text: `✅ **Núcleo de Memória Atualizado:** Aprendi sobre "${fato}".`,
+                timestamp: Date.now()
+            };
+
+            // Adiciona mensagem do usuário e resposta do sistema localmente
+            setMessages(prev => [
+                ...prev, 
+                { role: 'user', text: input, timestamp: Date.now() }, 
+                confirmMsg
+            ]);
+            
+            setInput('');
+            setShowCommands(false);
+            return; // Interrompe para não chamar o Gemini
+        }
+    }
+    // ---------------------------------
+
     const userMsg: ChatMessage = {
       role: 'user',
       text: input,
@@ -48,12 +87,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setShowCommands(false);
+    
     const imageToSend = selectedImage ? { inlineData: { data: selectedImage.data, mimeType: selectedImage.mimeType } } : undefined;
     setSelectedImage(null);
     setIsLoading(true);
 
     try {
-      // Expecting an object { text, thinking } now
       const result = await sendMessageToGemini({
         message: userMsg.text,
         history: messages,
@@ -96,14 +136,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
             <div className="w-20 h-20 border-2 border-dashed border-neon-blue rounded-full animate-spin-slow mb-4 flex items-center justify-center">
                 <div className="w-2 h-2 bg-neon-green rounded-full"></div>
             </div>
-            <p className="font-mono text-sm tracking-widest">NÚCLEO TABULA RASA: ATIVO</p>
+            <p className="font-mono text-sm tracking-widest">NÚCLEO ADAPTATIVO: ONLINE</p>
           </div>
         )}
         
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
             
-            {/* Thinking Block (Only for Model) */}
+            {/* Thinking Block (Only for Model if present) */}
             {msg.role === 'model' && msg.thinking && (
                 <div className="max-w-[90%] mb-2 animate-fade-in-up">
                     <details className="group">
@@ -152,7 +192,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-cyber-dark border-t border-white/10">
+      <div className="p-4 bg-cyber-dark border-t border-white/10 relative">
+        
+        {/* Command Suggestions Popup */}
+        {showCommands && (
+            <div className="absolute bottom-full left-4 mb-2 bg-cyber-dark border border-neon-blue p-3 rounded-lg shadow-[0_0_15px_rgba(0,243,255,0.2)] z-20 animate-fade-in-up">
+                <div className="text-neon-blue font-mono text-xs mb-1 font-bold">COMANDOS DISPONÍVEIS:</div>
+                <div className="text-gray-300 font-mono text-sm flex flex-col gap-1">
+                    <span className="p-1 hover:bg-white/10 rounded cursor-pointer transition-colors" onClick={() => { setInput('/treino '); setShowCommands(false); }}>
+                        <span className="text-neon-green">/treino</span> <span className="opacity-70">[texto]</span> - Gravar informação no Córtex
+                    </span>
+                </div>
+            </div>
+        )}
+
         {selectedImage && (
             <div className="mb-2 flex items-center gap-2 bg-neon-blue/10 p-2 rounded border border-neon-blue/20 w-fit">
                 <span className="text-xs text-neon-blue font-mono">DADOS VISUAIS ANEXADOS</span>
@@ -179,9 +232,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLearn }) => {
           
           <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Insira dados para processamento..."
+            placeholder="Digite / para comandos..."
             className="flex-1 bg-black border border-white/10 rounded-sm p-3 text-white placeholder-gray-700 focus:outline-none focus:border-neon-green/50 font-mono text-sm resize-none h-12 transition-colors"
           />
           
